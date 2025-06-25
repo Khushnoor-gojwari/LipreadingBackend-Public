@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: lipreading-backend
-    env: python
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn FastApi:app --host 0.0.0.0 --port 10000
-    autoDeploy: true
