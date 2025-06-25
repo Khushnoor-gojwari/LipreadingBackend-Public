@@ -7,7 +7,7 @@
 
 fastapi==0.110.1
 uvicorn==0.29.0
-tensorflow==2.11.0
+tensorflow==2.10.1
 gdown==4.7.1
 python-multipart==0.0.9
 typing-extensions==4.10.0
