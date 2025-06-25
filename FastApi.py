@@ -16,7 +16,7 @@ app = FastAPI()
 # Enable CORS for communication with frontend (e.g., React on port 3000)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["https://lipreading-front-public-amgp.vercel.app/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
