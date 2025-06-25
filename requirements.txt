@@ -4,7 +4,7 @@
 
 
 
-
+opencv-python-headless
 fastapi==0.110.1
 uvicorn==0.29.0
 tensorflow==2.10.1
