@@ -1,19 +1,17 @@
-
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from typing import List
-import os, subprocess, json
+from fastapi.responses import JSONResponse
+import os, subprocess, json, zipfile
 import tensorflow as tf
 from utils import load_video, load_alignments, num_to_char, load_data
 from modelutil import load_model
 from time import time
 import gdown
-import zipfile
-# Initialize FastAPI app
+
 app = FastAPI()
 
-# Enable CORS for communication with frontend (e.g., React on port 3000)
+# ✅ CORS setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://lipreading-front-public-amgp.vercel.app"],
@@ -22,32 +20,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# Load pre-trained lip reading model
+# ✅ Load model
 model = load_model()
 model.load_weights("checkpoints.weights.h5")
 
-# Path where video data is stored
+# ✅ Use local data (skip download if not needed)
 DATA_DIR = "data/s1"
-
 if not os.path.exists(DATA_DIR):
-    print(f"{DATA_DIR} not found. Downloading data.zip from Google Drive...")
-    # url = 'https://drive.google.com/uc?id=1_H6KrQAGBu4vl2i3_wsDq0xztOOjI7hK&confirm=t'
-    # output = 'data.zip'
-    # gdown.download(url, output, quiet=False)
+    print(f"{DATA_DIR} not found. Downloading...")
     gdown.download("https://drive.google.com/uc?id=1_H6KrQAGBu4vl2i3_wsDq0xztOOjI7hK", "data.zip", quiet=False)
-
-    print("Extracting data.zip...")
-    with zipfile.ZipFile(output, 'r') as zip_ref:
+    with zipfile.ZipFile("data.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
     print("Extraction complete.")
 
-# Endpoint to list all .mpg videos in the dataset folder
+# ✅ List videos
 @app.get("/videos/")
 def list_mpg_videos():
     return [f for f in os.listdir(DATA_DIR) if f.endswith(".mpg")]
 
-# Predict lip-read text from a given video
+# ✅ Predict route
 @app.get("/predict/")
 def predict_lip(request: Request, video_name: str = Query(...)):
     try:
@@ -56,21 +47,17 @@ def predict_lip(request: Request, video_name: str = Query(...)):
         mp4_path = os.path.join("temp", f"{file_base}.mp4")
         os.makedirs("temp", exist_ok=True)
 
-        # Convert video from .mpg to .mp4 using ffmpeg
         subprocess.run(["ffmpeg", "-y", "-i", mpg_path, mp4_path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        # Load frames and ground truth alignments
         frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
 
-        # Decode real text
         real_text = tf.strings.reduce_join([num_to_char(char) for char in alignments]).numpy().decode('utf-8')
 
-        # Predict using model and decode output
         yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
         decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
         predicted_text = tf.strings.reduce_join([num_to_char(char) for char in decoded[0]]).numpy().decode('utf-8')
 
-        # Dynamic video URL using request.base_url (not localhost!)
+        # 🔧 Use dynamic host instead of localhost
         timestamp = int(time())
         base_url = str(request.base_url).rstrip("/")
         video_url = f"{base_url}/temp/{file_base}.mp4?ts={timestamp}"
@@ -83,11 +70,14 @@ def predict_lip(request: Request, video_name: str = Query(...)):
 
     except Exception as e:
         print("❌ Predict Error:", str(e))
-# Mount the 'temp' folder to serve video files via URL
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+# ✅ Mount static video files
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
-# Accuracy file path for caching results
+# ✅ Accuracy endpoint
 accuracy_file = "accuracy_cache.json"
+
 @app.get("/calculate-accuracy")
 def read_cached_accuracy():
     try:
@@ -100,6 +90,3 @@ def read_cached_accuracy():
     except Exception as e:
         print("❌ Accuracy Error:", str(e))
         return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
-
-
-
