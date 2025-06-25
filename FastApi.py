@@ -111,7 +111,7 @@ app = FastAPI(redirect_slashes=False)
 # ✅ Add CORS middleware early
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://lipreading-front-public-amgp.vercel.app"],["*"]  # Your Vercel frontend
+    allow_origins=["https://lipreading-front-public-amgp.vercel.app"], # Your Vercel frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
