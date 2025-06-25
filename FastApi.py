@@ -9,7 +9,7 @@ from utils import load_video, load_alignments, num_to_char, load_data
 from modelutil import load_model
 from time import time
 import gdown
-
+import zipfile
 # Initialize FastAPI app
 app = FastAPI()
 
@@ -31,9 +31,10 @@ DATA_DIR = "data/s1"
 
 if not os.path.exists(DATA_DIR):
     print(f"{DATA_DIR} not found. Downloading data.zip from Google Drive...")
-    url = 'https://drive.google.com/uc?id=1_H6KrQAGBu4vl2i3_wsDq0xztOOjI7hK&confirm=t'
-    output = 'data.zip'
-    gdown.download(url, output, quiet=False)
+    # url = 'https://drive.google.com/uc?id=1_H6KrQAGBu4vl2i3_wsDq0xztOOjI7hK&confirm=t'
+    # output = 'data.zip'
+    # gdown.download(url, output, quiet=False)
+    gdown.download("https://drive.google.com/uc?id=1_H6KrQAGBu4vl2i3_wsDq0xztOOjI7hK", "data.zip", quiet=False)
 
     print("Extracting data.zip...")
     with zipfile.ZipFile(output, 'r') as zip_ref:
