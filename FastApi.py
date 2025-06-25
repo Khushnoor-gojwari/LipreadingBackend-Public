@@ -48,8 +48,12 @@ def predict_lip(request: Request, video_name: str = Query(...)):
         mp4_path = os.path.join("temp", f"{file_base}.mp4")
         os.makedirs("temp", exist_ok=True)
 
-        subprocess.run(["ffmpeg", "-y", "-i", mpg_path, mp4_path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
+        # subprocess.run(["ffmpeg", "-y", "-i", mpg_path, mp4_path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(["ffmpeg", "-y", "-i", mpg_path, mp4_path],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            error_message = result.stderr.decode()
+            print("❌ ffmpeg failed:\n", error_message)
+            return JSONResponse(status_code=500, content={"error": "ffmpeg failed", "details": error_message})
         frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
 
         real_text = tf.strings.reduce_join([num_to_char(char) for char in alignments]).numpy().decode('utf-8')
@@ -72,6 +76,7 @@ def predict_lip(request: Request, video_name: str = Query(...)):
     except Exception as e:
         print("❌ Predict Error:", str(e))
         return JSONResponse(status_code=500, content={"error": str(e)})
+        
 
 # ✅ Mount static video files
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
