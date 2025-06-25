@@ -9,7 +9,7 @@ from modelutil import load_model
 from time import time
 import gdown
 
-app = FastAPI()
+app = FastAPI(redirect_slashes=False)
 
 # ✅ CORS setup
 app.add_middleware(
