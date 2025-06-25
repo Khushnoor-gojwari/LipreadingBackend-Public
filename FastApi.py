@@ -22,6 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # Load pre-trained lip reading model
 model = load_model()
 model.load_weights("checkpoints.weights.h5")
@@ -48,50 +49,57 @@ def list_mpg_videos():
 
 # Predict lip-read text from a given video
 @app.get("/predict/")
-def predict_lip(video_name: str = Query(...)):
-    file_base = os.path.splitext(video_name)[0]
-    mpg_path = os.path.join(DATA_DIR, video_name)
-    mp4_path = os.path.join("temp", f"{file_base}.mp4")
-    os.makedirs("temp", exist_ok=True)
+def predict_lip(request: Request, video_name: str = Query(...)):
+    try:
+        file_base = os.path.splitext(video_name)[0]
+        mpg_path = os.path.join(DATA_DIR, video_name)
+        mp4_path = os.path.join("temp", f"{file_base}.mp4")
+        os.makedirs("temp", exist_ok=True)
 
-    # Convert video from .mpg to .mp4 using ffmpeg
-    subprocess.run(["ffmpeg", "-y", "-i", mpg_path, mp4_path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Convert video from .mpg to .mp4 using ffmpeg
+        subprocess.run(["ffmpeg", "-y", "-i", mpg_path, mp4_path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    # Load frames and ground truth alignments
-    frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
+        # Load frames and ground truth alignments
+        frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
 
-    # Decode real text from alignment
-    real_text = tf.strings.reduce_join([num_to_char(char) for char in alignments]).numpy().decode('utf-8')
+        # Decode real text
+        real_text = tf.strings.reduce_join([num_to_char(char) for char in alignments]).numpy().decode('utf-8')
 
-    # Predict using model and decode output
-    yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
-    decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
-    predicted_text = tf.strings.reduce_join([num_to_char(char) for char in decoded[0]]).numpy().decode('utf-8')
+        # Predict using model and decode output
+        yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
+        decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
+        predicted_text = tf.strings.reduce_join([num_to_char(char) for char in decoded[0]]).numpy().decode('utf-8')
 
-    # Serve converted video with cache-busting timestamp
-    from time import time
-    timestamp = int(time())
-    video_url = f"http://localhost:8000/temp/{file_base}.mp4?ts={timestamp}"
+        # Dynamic video URL using request.base_url (not localhost!)
+        timestamp = int(time())
+        base_url = str(request.base_url).rstrip("/")
+        video_url = f"{base_url}/temp/{file_base}.mp4?ts={timestamp}"
 
-    return {
-        "real_text": real_text.strip(),
-        "predicted_text": predicted_text.strip(),
-        "video_url": video_url
-    }
+        return {
+            "real_text": real_text.strip(),
+            "predicted_text": predicted_text.strip(),
+            "video_url": video_url
+        }
 
+    except Exception as e:
+        print("❌ Predict Error:", str(e))
 # Mount the 'temp' folder to serve video files via URL
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
 # Accuracy file path for caching results
 accuracy_file = "accuracy_cache.json"
-
-# Endpoint to read precomputed accuracy metrics (if exists)
 @app.get("/calculate-accuracy")
 def read_cached_accuracy():
-    if os.path.exists(accuracy_file):
-        with open(accuracy_file, "r") as f:
-            return json.load(f)
-    return {
-        "error": "Accuracy cache not found. Please generate accuracy_cache.json manually."
-    }
+    try:
+        if os.path.exists(accuracy_file):
+            with open(accuracy_file, "r") as f:
+                return json.load(f)
+        return {
+            "error": "Accuracy cache not found. Please generate accuracy_cache.json manually."
+        }
+    except Exception as e:
+        print("❌ Accuracy Error:", str(e))
+        return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
+
+
 
