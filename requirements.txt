@@ -1,7 +1,6 @@
-
-fastapi
-uvicorn
-tensorflow
-gdown
-python-multipart
-typing-extensions
+fastapi==0.110.1
+uvicorn==0.29.0
+tensorflow==2.13.0
+gdown==4.7.1
+python-multipart==0.0.9
+typing-extensions==4.10.0
