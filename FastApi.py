@@ -143,23 +143,24 @@ def list_mpg_videos():
 
 # ✅ Predict route
 @app.get("/predict")
-@app.head("/predict")
 def predict_lip(request: Request, video_name: str = Query(...)):
-    # 1️⃣ Ensure video_name was provided
+    # 1️⃣ Ensure we actually got a video_name
     if not video_name:
         return JSONResponse(status_code=400, content={"error": "query parameter video_name is required"})
 
-    # 2️⃣ Build and validate input path
+    # 2️⃣ Build and validate the path
     mpg_path = os.path.join(DATA_DIR, video_name)
     if not os.path.isfile(mpg_path):
-        return JSONResponse(status_code=404, content={"error": f"Video file not found: {video_name}"})
+        return JSONResponse(
+            status_code=404,
+            content={"error": f"Video file not found: {video_name}"}
+        )
 
-    # 3️⃣ Prepare output folder & path
     mp4_filename = f"{os.path.splitext(video_name)[0]}.mp4"
     mp4_path = os.path.join("temp", mp4_filename)
     os.makedirs("temp", exist_ok=True)
 
-    # 4️⃣ Run ffmpeg
+    # now you can safely call ffmpeg…
     result = subprocess.run(
         ["ffmpeg", "-y", "-i", mpg_path, mp4_path],
         stdout=subprocess.PIPE,
@@ -168,8 +169,7 @@ def predict_lip(request: Request, video_name: str = Query(...)):
     if result.returncode != 0:
         err = result.stderr.decode()
         print("❌ ffmpeg failed for", mpg_path, "\n", err)
-        return JSONResponse(status_code=500, content={"error": "ffmpeg failed", "details": err})
-
+        return JSONResponse(status_code=500, content={"error":"ffmpeg failed","details":err})
     # 5️⃣ Load & run your model
     try:
         frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
