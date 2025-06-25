@@ -39,6 +39,7 @@ def list_mpg_videos():
     return [f for f in os.listdir(DATA_DIR) if f.endswith(".mpg")]
 
 # ✅ Predict route
+@app.get("/predict")
 @app.get("/predict/")
 def predict_lip(request: Request, video_name: str = Query(...)):
     try:
