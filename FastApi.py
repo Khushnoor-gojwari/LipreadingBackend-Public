@@ -96,8 +96,6 @@
 #     except Exception as e:
 #         print("❌ Accuracy Error:", str(e))
 #         return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
-
-
 from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -110,10 +108,10 @@ import gdown
 
 app = FastAPI(redirect_slashes=False)
 
-# ✅ CORS setup
+# ✅ Add CORS middleware early
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://lipreading-front-public-amgp.vercel.app"],
+    allow_origins=["https://lipreading-front-public-amgp.vercel.app"],  # Your Vercel frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -126,7 +124,7 @@ model.load_weights("checkpoints.weights.h5")
 # ✅ Ensure temp folder exists
 os.makedirs("temp", exist_ok=True)
 
-# ✅ Use local data (skip download if not needed)
+# ✅ Use local data
 DATA_DIR = "data/s1"
 if not os.path.exists(DATA_DIR):
     print(f"{DATA_DIR} not found. Downloading...")
@@ -135,20 +133,20 @@ if not os.path.exists(DATA_DIR):
         zip_ref.extractall(".")
     print("Extraction complete.")
 
-# ✅ List videos
+# ✅ List available .mpg videos
 @app.get("/videos/")
 def list_mpg_videos():
     return [f for f in os.listdir(DATA_DIR) if f.endswith(".mpg")]
 
 # ✅ Predict route
 @app.get("/predict")
-@app.get("/predict/")
 def predict_lip(request: Request, video_name: str = Query(...)):
     try:
         file_base = os.path.splitext(video_name)[0]
         mpg_path = os.path.join(DATA_DIR, video_name)
         mp4_path = os.path.join("temp", f"{file_base}.mp4")
 
+        # Convert to .mp4 using ffmpeg
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", mpg_path, mp4_path],
             stdout=subprocess.PIPE,
@@ -159,14 +157,14 @@ def predict_lip(request: Request, video_name: str = Query(...)):
             print("❌ ffmpeg failed:\n", error_message)
             return JSONResponse(status_code=500, content={"error": "ffmpeg failed", "details": error_message})
 
+        # Load video and alignment
         frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
-
         real_text = tf.strings.reduce_join([num_to_char(char) for char in alignments]).numpy().decode('utf-8')
         yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
         decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
         predicted_text = tf.strings.reduce_join([num_to_char(char) for char in decoded[0]]).numpy().decode('utf-8')
 
-        # ✅ Serve video using route
+        # Build public video URL
         base_url = str(request.base_url).rstrip("/")
         timestamp = int(time())
         video_url = f"{base_url}/video-file/{file_base}.mp4?ts={timestamp}"
@@ -181,7 +179,7 @@ def predict_lip(request: Request, video_name: str = Query(...)):
         print("❌ Predict Error:", str(e))
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# ✅ Serve video files via route
+# ✅ Serve video file through route
 @app.get("/video-file/{filename}")
 def serve_temp_video(filename: str):
     file_path = os.path.join("temp", filename)
@@ -189,19 +187,15 @@ def serve_temp_video(filename: str):
         return JSONResponse(status_code=404, content={"error": "Video file not found."})
     return FileResponse(file_path, media_type="video/mp4")
 
-# ✅ Accuracy endpoint
-accuracy_file = "accuracy_cache.json"
-
+# ✅ Accuracy cache endpoint
 @app.get("/calculate-accuracy")
 def read_cached_accuracy():
     try:
+        accuracy_file = "accuracy_cache.json"
         if os.path.exists(accuracy_file):
             with open(accuracy_file, "r") as f:
                 return json.load(f)
-        return {
-            "error": "Accuracy cache not found. Please generate accuracy_cache.json manually."
-        }
+        return {"error": "Accuracy cache not found."}
     except Exception as e:
         print("❌ Accuracy Error:", str(e))
-        return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
-
+        return JSONResponse(status_code=500, content={"error": str(e)})
