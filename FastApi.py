@@ -132,6 +132,9 @@ if not os.path.exists(DATA_DIR):
     with zipfile.ZipFile("data.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
     print("Extraction complete.")
+@app.get("/")
+def health():
+    return {"status": "Lipreading backend is alive"}
 
 # ✅ List available .mpg videos
 @app.get("/videos/")
@@ -140,6 +143,7 @@ def list_mpg_videos():
 
 # ✅ Predict route
 @app.get("/predict")
+@app.head("/predict")
 def predict_lip(request: Request, video_name: str = Query(...)):
     # 1️⃣ Ensure video_name was provided
     if not video_name:
