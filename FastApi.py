@@ -96,103 +96,90 @@
 #     except Exception as e:
 #         print("❌ Accuracy Error:", str(e))
 #         return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-import os, subprocess, json, zipfile
+import os
+import subprocess
+import tempfile
 import tensorflow as tf
-from utils import load_video, load_alignments, num_to_char, load_data
+from utils import load_data, num_to_char
 from modelutil import load_model
 from time import time
-import gdown
+import json  # Import json module
 
 app = FastAPI(redirect_slashes=False)
 
-# ✅ Add CORS middleware early
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://lipreading-front-public-amgp.vercel.app"], # Your Vercel frontend
+    allow_origins=[
+        "http://localhost:3000",
+        "https://lipreading-front-public-amgp.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Load model
+# Load model
 model = load_model()
 model.load_weights("checkpoints.weights.h5")
 
-# ✅ Ensure temp folder exists
-os.makedirs("temp", exist_ok=True)
-
-# ✅ Use local data
-DATA_DIR = "data/s1"
-if not os.path.exists(DATA_DIR):
-    print(f"{DATA_DIR} not found. Downloading...")
-    gdown.download("https://drive.google.com/uc?id=1_H6KrQAGBu4vl2i3_wsDq0xztOOjI7hK", "data.zip", quiet=False)
-    with zipfile.ZipFile("data.zip", 'r') as zip_ref:
-        zip_ref.extractall(".")
-    print("Extraction complete.")
 @app.get("/")
 def health():
     return {"status": "Lipreading backend is alive"}
 
-# ✅ List available .mpg videos
 @app.get("/videos/")
 def list_mpg_videos():
-    return [f for f in os.listdir(DATA_DIR) if f.endswith(".mpg")]
+    # List available .mpg videos
+    return [f for f in os.listdir("data/s1") if f.endswith(".mpg")]
 
-# ✅ Predict route
-@app.get("/predict")
-def predict_lip(request: Request, video_name: str = Query(...)):
-    # 1️⃣ Ensure we actually got a video_name
-    if not video_name:
-        return JSONResponse(status_code=400, content={"error": "query parameter video_name is required"})
+@app.post("/predict")
+async def predict_lip(file: UploadFile = File(...)):
+    if not file:
+        return JSONResponse(status_code=400, content={"error": "File is required"})
 
-    # 2️⃣ Build and validate the path
-    mpg_path = os.path.join(DATA_DIR, video_name)
-    if not os.path.isfile(mpg_path):
-        return JSONResponse(
-            status_code=404,
-            content={"error": f"Video file not found: {video_name}"}
-        )
+    video_bytes = await file.read()
 
-    mp4_filename = f"{os.path.splitext(video_name)[0]}.mp4"
-    mp4_path = os.path.join("temp", mp4_filename)
-    os.makedirs("temp", exist_ok=True)
+    # Create a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
+        temp_video_path = temp_video_file.name
+        temp_video_file.write(video_bytes)
 
-    # now you can safely call ffmpeg…
+    # Process the video using ffmpeg
+    output_video_path = temp_video_path.replace(".mp4", "_processed.mp4")
     result = subprocess.run(
-        ["ffmpeg", "-y", "-i", mpg_path, mp4_path],
+        ["ffmpeg", "-y", "-i", temp_video_path, output_video_path],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
+    
     if result.returncode != 0:
         err = result.stderr.decode()
-        print("❌ ffmpeg failed for", mpg_path, "\n", err)
-        return JSONResponse(status_code=500, content={"error":"ffmpeg failed","details":err})
-    # 5️⃣ Load & run your model
+        return JSONResponse(status_code=500, content={"error": "ffmpeg failed", "details": err})
+
+    # Load & run your model
     try:
-        frames, alignments = load_data(tf.convert_to_tensor(mpg_path))
+        frames, alignments = load_data(tf.convert_to_tensor(output_video_path))
         real_text = tf.strings.reduce_join([num_to_char(c) for c in alignments]).numpy().decode("utf-8")
         yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
         decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
         predicted_text = tf.strings.reduce_join([num_to_char(c) for c in decoded[0]]).numpy().decode("utf-8")
     except Exception as e:
-        print("❌ Model inference error:", e)
         return JSONResponse(status_code=500, content={"error": "model inference failed", "details": str(e)})
 
-    # 6️⃣ Build the public video URL
+    # Build the public video URL
     base = str(request.base_url).rstrip("/")
     timestamp = int(time())
-    video_url = f"{base}/video-file/{mp4_filename}?ts={timestamp}"
+    video_url = f"{base}/video-file/{os.path.basename(output_video_path)}?ts={timestamp}"
 
-    # 7️⃣ **Return** your JSON result
     return {
         "real_text": real_text.strip(),
         "predicted_text": predicted_text.strip(),
         "video_url": video_url
     }
-# ✅ Serve video file through route
+
 @app.get("/video-file/{filename}")
 def serve_temp_video(filename: str):
     file_path = os.path.join("temp", filename)
@@ -200,7 +187,6 @@ def serve_temp_video(filename: str):
         return JSONResponse(status_code=404, content={"error": "Video file not found."})
     return FileResponse(file_path, media_type="video/mp4")
 
-# ✅ Accuracy cache endpoint
 @app.get("/calculate-accuracy")
 def read_cached_accuracy():
     try:
@@ -212,3 +198,4 @@ def read_cached_accuracy():
     except Exception as e:
         print("❌ Accuracy Error:", str(e))
         return JSONResponse(status_code=500, content={"error": str(e)})
+
