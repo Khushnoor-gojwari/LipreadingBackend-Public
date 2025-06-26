@@ -96,6 +96,8 @@
 #     except Exception as e:
 #         print("❌ Accuracy Error:", str(e))
 #         return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
+
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
@@ -135,57 +137,76 @@ def list_mpg_videos():
     # List available .mpg videos
     return [f for f in os.listdir("data/s1") if f.endswith(".mpg")]
 
-@app.post("/predict")
-async def predict_lip(file: UploadFile = File(...)):
-    if not file:
-        return JSONResponse(status_code=400, content={"error": "File is required"})
+# @app.post("/predict")
+# async def predict_lip(file: UploadFile = File(...)):
+#     if not file:
+#         return JSONResponse(status_code=400, content={"error": "File is required"})
 
-    video_bytes = await file.read()
+#     video_bytes = await file.read()
 
-    # Create a temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
-        temp_video_path = temp_video_file.name
-        temp_video_file.write(video_bytes)
+#     # Create a temporary file
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
+#         temp_video_path = temp_video_file.name
+#         temp_video_file.write(video_bytes)
 
-    # Process the video using ffmpeg
-    output_video_path = temp_video_path.replace(".mp4", "_processed.mp4")
-    result = subprocess.run(
-        ["ffmpeg", "-y", "-i", temp_video_path, output_video_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
+#     # Process the video using ffmpeg
+#     output_video_path = temp_video_path.replace(".mp4", "_processed.mp4")
+#     result = subprocess.run(
+#         ["ffmpeg", "-y", "-i", temp_video_path, output_video_path],
+#         stdout=subprocess.PIPE,
+#         stderr=subprocess.PIPE
+#     )
     
-    if result.returncode != 0:
-        err = result.stderr.decode()
-        return JSONResponse(status_code=500, content={"error": "ffmpeg failed", "details": err})
+#     if result.returncode != 0:
+#         err = result.stderr.decode()
+#         return JSONResponse(status_code=500, content={"error": "ffmpeg failed", "details": err})
 
-    # Load & run your model
+#     # Load & run your model
+#     try:
+#         frames, alignments = load_data(tf.convert_to_tensor(output_video_path))
+#         real_text = tf.strings.reduce_join([num_to_char(c) for c in alignments]).numpy().decode("utf-8")
+#         yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
+#         decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
+#         predicted_text = tf.strings.reduce_join([num_to_char(c) for c in decoded[0]]).numpy().decode("utf-8")
+#     except Exception as e:
+#         return JSONResponse(status_code=500, content={"error": "model inference failed", "details": str(e)})
+@app.post("/predict")
+def predict_lip(video_name: str = Query(...)):
+    video_path = os.path.join("data/s1", video_name)
+
+    if not os.path.exists(video_path):
+        return JSONResponse(status_code=404, content={"error": f"{video_name} not found on server."})
+
     try:
-        frames, alignments = load_data(tf.convert_to_tensor(output_video_path))
+        # Load data from video
+        frames, alignments = load_data(tf.convert_to_tensor(video_path))
+
+        # Get ground truth
         real_text = tf.strings.reduce_join([num_to_char(c) for c in alignments]).numpy().decode("utf-8")
+
+        # Model prediction
         yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
         decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
         predicted_text = tf.strings.reduce_join([num_to_char(c) for c in decoded[0]]).numpy().decode("utf-8")
+
+        return {
+            "real_text": real_text.strip(),
+            "predicted_text": predicted_text.strip()
+        }
+
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": "model inference failed", "details": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Model inference failed", "details": str(e)})        
 
-    # Build the public video URL
-    base = str(request.base_url).rstrip("/")
-    timestamp = int(time())
-    video_url = f"{base}/video-file/{os.path.basename(output_video_path)}?ts={timestamp}"
 
-    return {
-        "real_text": real_text.strip(),
-        "predicted_text": predicted_text.strip(),
-        "video_url": video_url
-    }
 
-@app.get("/video-file/{filename}")
-def serve_temp_video(filename: str):
-    file_path = os.path.join("temp", filename)
-    if not os.path.exists(file_path):
-        return JSONResponse(status_code=404, content={"error": "Video file not found."})
-    return FileResponse(file_path, media_type="video/mp4")
+  
+
+# @app.get("/video-file/{filename}")
+# def serve_temp_video(filename: str):
+#     file_path = os.path.join("temp", filename)
+#     if not os.path.exists(file_path):
+#         return JSONResponse(status_code=404, content={"error": "Video file not found."})
+#     return FileResponse(file_path, media_type="video/mp4")
 
 @app.get("/calculate-accuracy")
 def read_cached_accuracy():
