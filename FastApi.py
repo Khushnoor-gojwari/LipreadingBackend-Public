@@ -172,22 +172,25 @@ def list_mpg_videos():
 #         return JSONResponse(status_code=500, content={"error": "model inference failed", "details": str(e)})
 @app.post("/predict")
 def predict_lip(video_name: str = Query(...)):
+    print(f"✅ /predict called with video_name: {video_name}")
+
     video_path = os.path.join("data/s1", video_name)
+    print(f"🔍 Full path: {video_path}")
 
     if not os.path.exists(video_path):
+        print("❌ File not found.")
         return JSONResponse(status_code=404, content={"error": f"{video_name} not found on server."})
 
     try:
-        # Load data from video
         frames, alignments = load_data(tf.convert_to_tensor(video_path))
+        print("✅ Loaded data successfully.")
 
-        # Get ground truth
         real_text = tf.strings.reduce_join([num_to_char(c) for c in alignments]).numpy().decode("utf-8")
-
-        # Model prediction
         yhat = model.predict(tf.expand_dims(frames, axis=0), verbose=0)
         decoded = tf.keras.backend.ctc_decode(yhat, input_length=[75], greedy=True)[0][0].numpy()
         predicted_text = tf.strings.reduce_join([num_to_char(c) for c in decoded[0]]).numpy().decode("utf-8")
+
+        print(f"✅ Prediction done: Real: {real_text.strip()}, Predicted: {predicted_text.strip()}")
 
         return {
             "real_text": real_text.strip(),
@@ -195,6 +198,7 @@ def predict_lip(video_name: str = Query(...)):
         }
 
     except Exception as e:
+        print(f"❌ Inference error: {e}")
         return JSONResponse(status_code=500, content={"error": "Model inference failed", "details": str(e)})        
 
 
