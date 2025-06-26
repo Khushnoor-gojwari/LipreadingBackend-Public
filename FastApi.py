@@ -98,7 +98,7 @@
 #         return JSONResponse(status_code=500, content={"error": f"Failed to read accuracy: {str(e)}"})
 
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI , Query ,UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 import os
